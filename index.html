@@ -108,7 +108,9 @@
     background: var(--chip); color: var(--chip-ink);
     padding: 3px 8px; border-radius: 999px; text-transform: uppercase;
   }
-  .seg .text { font-size: 17px; line-height: 1.55; word-wrap: break-word; }
+  .seg .text { font-size: 17px; line-height: 1.55; word-wrap: break-word; direction: ltr; text-align: left; }
+  .seg.rtl .text { direction: rtl; text-align: right; }
+  .seg.rtl .meta { justify-content: flex-end; }
   .interim { color: var(--ink-faint); font-style: italic; }
 
   footer {
@@ -337,6 +339,14 @@ let recording = false;
 
 function speakerLabel(s) { return s ? `Speaker ${s}` : null; }
 
+// Right-to-left scripts (base language subtag): Arabic, Hebrew, Persian, Urdu,
+// Pashto, Sindhi, Yiddish, Dhivehi, Kurdish (Sorani), Uyghur, Aramaic/Syriac, Nko.
+const RTL_LANGS = new Set(['ar', 'he', 'iw', 'fa', 'ur', 'ps', 'sd', 'yi', 'ji', 'dv', 'ckb', 'ug', 'arc', 'syr', 'nqo']);
+function isRtlLang(lang) {
+  if (!lang) return false;
+  return RTL_LANGS.has(lang.toLowerCase().split(/[-_]/)[0]);
+}
+
 function isBreak(tok) {
   const t = (tok.text || '').trim();
   return t === '<end>' || t === '<fin>';
@@ -353,7 +363,8 @@ function renderTokens(allTokens) {
     const spk = tok.speaker || null;
     const lang = tok.language || null;
     const interim = !tok.is_final;
-    if (!cur || cur.speaker !== spk) {
+    const langChanged = cur && lang && cur.lang && lang !== cur.lang;
+    if (!cur || cur.speaker !== spk || langChanged) {
       cur = { speaker: spk, lang, runs: [] };
       segs.push(cur);
     }
@@ -366,7 +377,9 @@ function renderTokens(allTokens) {
   transcriptEl.querySelectorAll('.seg').forEach(n => n.remove());
   for (const seg of segs) {
     const div = document.createElement('div');
-    div.className = 'seg';
+    const rtl = isRtlLang(seg.lang);
+    div.className = 'seg' + (rtl ? ' rtl' : '');
+    div.dir = rtl ? 'rtl' : 'ltr';
     const spkLabel = speakerLabel(seg.speaker);
     if (spkLabel || seg.lang) {
       const meta = document.createElement('div');
