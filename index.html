@@ -334,6 +334,7 @@ function setStatus(state, text) {
 }
 
 let committed = [];
+let segNodes = [];
 let client = null;
 let recording = false;
 
@@ -352,8 +353,9 @@ function isBreak(tok) {
   return t === '<end>' || t === '<fin>';
 }
 
-function renderTokens(allTokens) {
-  emptyEl.style.display = 'none';
+// Group tokens into rows by speaker / language. Within a row, final text always
+// precedes interim text, so each row collapses to a { final, interim } pair.
+function buildSegments(allTokens) {
   const segs = [];
   let cur = null;
   for (const tok of allTokens) {
@@ -362,42 +364,70 @@ function renderTokens(allTokens) {
     if (!text) continue;
     const spk = tok.speaker || null;
     const lang = tok.language || null;
-    const interim = !tok.is_final;
     const langChanged = cur && lang && cur.lang && lang !== cur.lang;
     if (!cur || cur.speaker !== spk || langChanged) {
-      cur = { speaker: spk, lang, runs: [] };
+      cur = { speaker: spk, lang, final: '', interim: '' };
       segs.push(cur);
     }
     if (lang && !cur.lang) cur.lang = lang;
-    const last = cur.runs[cur.runs.length - 1];
-    if (last && last.interim === interim) last.text += text;
-    else cur.runs.push({ text, interim });
+    if (tok.is_final) cur.final += text;
+    else cur.interim += text;
   }
+  return segs;
+}
 
-  transcriptEl.querySelectorAll('.seg').forEach(n => n.remove());
-  for (const seg of segs) {
-    const div = document.createElement('div');
-    const rtl = isRtlLang(seg.lang);
-    div.className = 'seg' + (rtl ? ' rtl' : '');
-    div.dir = rtl ? 'rtl' : 'ltr';
+function createSegNode() {
+  const node_el = document.createElement('div');
+  node_el.className = 'seg';
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  const txt = document.createElement('div');
+  txt.className = 'text';
+  const finalSpan = document.createElement('span');
+  const interimSpan = document.createElement('span');
+  interimSpan.className = 'interim';
+  txt.append(finalSpan, interimSpan);
+  node_el.append(meta, txt);
+  return { el: node_el, meta, finalSpan, interimSpan, dir: '', key: ' ' };
+}
+
+// Update a row's DOM in place. Only writes properties that actually changed so
+// finalized words are never re-rendered (no reflow, no animation, no blink).
+function updateSegNode(node, seg) {
+  const dir = isRtlLang(seg.lang) ? 'rtl' : 'ltr';
+  if (node.dir !== dir) {
+    node.dir = dir;
+    node.el.className = dir === 'rtl' ? 'seg rtl' : 'seg';
+    node.el.dir = dir;
+  }
+  const key = (seg.speaker || '') + '|' + (seg.lang || '');
+  if (node.key !== key) {
+    node.key = key;
+    node.meta.textContent = '';
     const spkLabel = speakerLabel(seg.speaker);
-    if (spkLabel || seg.lang) {
-      const meta = document.createElement('div');
-      meta.className = 'meta';
-      if (spkLabel) { const c = document.createElement('span'); c.className = 'chip'; c.textContent = spkLabel; meta.appendChild(c); }
-      if (seg.lang) { const c = document.createElement('span'); c.className = 'chip'; c.textContent = seg.lang; meta.appendChild(c); }
-      div.appendChild(meta);
+    if (spkLabel) { const c = document.createElement('span'); c.className = 'chip'; c.textContent = spkLabel; node.meta.appendChild(c); }
+    if (seg.lang) { const c = document.createElement('span'); c.className = 'chip'; c.textContent = seg.lang; node.meta.appendChild(c); }
+    node.meta.style.display = (spkLabel || seg.lang) ? '' : 'none';
+  }
+  if (node.finalSpan.textContent !== seg.final) node.finalSpan.textContent = seg.final;
+  if (node.interimSpan.textContent !== seg.interim) node.interimSpan.textContent = seg.interim;
+}
+
+function renderTokens(allTokens) {
+  const segs = buildSegments(allTokens);
+  if (segs.length) emptyEl.style.display = 'none';
+
+  for (let i = 0; i < segs.length; i++) {
+    let node = segNodes[i];
+    if (!node) {
+      node = createSegNode();
+      segNodes[i] = node;
+      transcriptEl.appendChild(node.el);
     }
-    const txt = document.createElement('div');
-    txt.className = 'text';
-    for (const run of seg.runs) {
-      const span = document.createElement('span');
-      if (run.interim) span.className = 'interim';
-      span.textContent = run.text;
-      txt.appendChild(span);
-    }
-    div.appendChild(txt);
-    transcriptEl.appendChild(div);
+    updateSegNode(node, segs[i]);
+  }
+  while (segNodes.length > segs.length) {
+    segNodes.pop().el.remove();
   }
 
   const nearBottom = transcriptEl.scrollHeight - transcriptEl.scrollTop - transcriptEl.clientHeight < 120;
@@ -416,6 +446,7 @@ function onPartialResult(result) {
 
 function clearTranscript() {
   committed = [];
+  segNodes = [];
   transcriptEl.querySelectorAll('.seg').forEach(n => n.remove());
   emptyEl.style.display = '';
 }
