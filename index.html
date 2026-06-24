@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Live Transcribe</title>
+<style>
+  :root {
+    --bg: #f6f7fb;
+    --panel: #ffffff;
+    --ink: #1c2030;
+    --ink-soft: #5a6072;
+    --ink-faint: #9aa0b4;
+    --line: #e6e8f0;
+    --accent: #4f46e5;
+    --accent-ink: #ffffff;
+    --rec: #e23b54;
+    --rec-glow: rgba(226, 59, 84, 0.35);
+    --chip: #eef0fb;
+    --chip-ink: #4f46e5;
+    --shadow: 0 8px 30px rgba(20, 24, 48, 0.10);
+    --radius: 16px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1117;
+      --panel: #171a23;
+      --ink: #eef0f6;
+      --ink-soft: #aab0c4;
+      --ink-faint: #6b7186;
+      --line: #262a36;
+      --accent: #7c75ff;
+      --accent-ink: #0f1117;
+      --rec: #ff5a73;
+      --rec-glow: rgba(255, 90, 115, 0.35);
+      --chip: #20243a;
+      --chip-ink: #b9b4ff;
+      --shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+    }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    display: flex;
+    flex-direction: column;
+    min-height: 100dvh;
+    overscroll-behavior: none;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    padding-top: max(14px, env(safe-area-inset-top));
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+    position: sticky;
+    top: 0;
+    z-index: 5;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; letter-spacing: -0.2px; }
+  .brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 20%, transparent); }
+  .icon-btn {
+    appearance: none; border: 1px solid var(--line); background: var(--panel);
+    color: var(--ink); width: 44px; height: 44px; border-radius: 12px;
+    display: grid; place-items: center; cursor: pointer; transition: transform .12s ease, background .2s ease;
+  }
+  .icon-btn:hover { background: var(--bg); }
+  .icon-btn:active { transform: scale(0.94); }
+  .icon-btn svg { width: 22px; height: 22px; }
+
+  main {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .empty {
+    margin: auto;
+    text-align: center;
+    color: var(--ink-faint);
+    max-width: 320px;
+    padding: 30px 12px;
+  }
+  .empty svg { width: 56px; height: 56px; opacity: .5; margin-bottom: 14px; }
+  .empty h2 { font-size: 17px; margin: 0 0 6px; color: var(--ink-soft); font-weight: 600; }
+  .empty p { margin: 0; font-size: 14px; line-height: 1.5; }
+
+  .seg {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    box-shadow: var(--shadow);
+    animation: rise .18s ease;
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .seg .meta { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+  .chip {
+    font-size: 11px; font-weight: 600; letter-spacing: .3px;
+    background: var(--chip); color: var(--chip-ink);
+    padding: 3px 8px; border-radius: 999px; text-transform: uppercase;
+  }
+  .seg .text { font-size: 17px; line-height: 1.55; word-wrap: break-word; }
+  .interim { color: var(--ink-faint); font-style: italic; }
+
+  footer {
+    border-top: 1px solid var(--line);
+    background: var(--panel);
+    padding: 14px 18px;
+    padding-bottom: max(14px, env(safe-area-inset-bottom));
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .status {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 14px;
+    color: var(--ink-soft);
+    min-width: 0;
+  }
+  .status .led { width: 10px; height: 10px; border-radius: 50%; background: var(--ink-faint); flex: none; transition: background .2s; }
+  .status.is-recording .led { background: var(--rec); animation: blink 1s infinite; }
+  .status.is-connecting .led { background: #f5a623; animation: blink .7s infinite; }
+  .status.is-error .led { background: var(--rec); }
+  .status.is-finished .led { background: var(--accent); }
+  .status .txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  @keyframes blink { 50% { opacity: .3; } }
+
+  .ghost-btn {
+    appearance: none; background: none; border: none; color: var(--ink-faint);
+    font-size: 13px; cursor: pointer; padding: 6px 8px; border-radius: 8px;
+  }
+  .ghost-btn:hover { color: var(--ink-soft); }
+
+  .rec-btn {
+    appearance: none; border: none; cursor: pointer; flex: none;
+    width: 64px; height: 64px; border-radius: 50%;
+    background: var(--rec); color: #fff;
+    display: grid; place-items: center;
+    box-shadow: 0 6px 20px var(--rec-glow);
+    transition: transform .12s ease, box-shadow .2s ease;
+  }
+  .rec-btn:active { transform: scale(0.92); }
+  .rec-btn:disabled { opacity: .5; cursor: default; }
+  .rec-btn .ic { width: 26px; height: 26px; background: #fff; border-radius: 50%; transition: all .2s ease; }
+  .rec-btn.recording { animation: pulse 1.6s infinite; }
+  .rec-btn.recording .ic { border-radius: 6px; width: 22px; height: 22px; }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 var(--rec-glow); }
+    70% { box-shadow: 0 0 0 16px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+  }
+
+  .overlay {
+    position: fixed; inset: 0; background: rgba(10, 12, 22, 0.45);
+    opacity: 0; pointer-events: none; transition: opacity .2s ease; z-index: 20;
+    backdrop-filter: blur(2px);
+  }
+  .overlay.open { opacity: 1; pointer-events: auto; }
+  .sheet {
+    position: fixed; left: 50%; bottom: 0; transform: translate(-50%, 100%);
+    width: min(480px, 100%);
+    background: var(--panel);
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -10px 40px rgba(0,0,0,.25);
+    padding: 20px 20px max(20px, env(safe-area-inset-bottom));
+    transition: transform .26s cubic-bezier(.2,.8,.2,1);
+    z-index: 21;
+  }
+  .sheet.open { transform: translate(-50%, 0); }
+  @media (min-width: 600px) {
+    .sheet { bottom: auto; top: 50%; transform: translate(-50%, calc(-50% + 20px)); border-radius: 20px; opacity: 0; }
+    .sheet.open { transform: translate(-50%, -50%); opacity: 1; }
+  }
+  .sheet h2 { margin: 0 0 4px; font-size: 18px; }
+  .sheet .sub { margin: 0 0 18px; font-size: 13px; color: var(--ink-soft); }
+  .grabber { width: 40px; height: 4px; border-radius: 2px; background: var(--line); margin: 0 auto 14px; }
+  @media (min-width: 600px) { .grabber { display: none; } }
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--ink-soft); }
+  .field .hint { font-size: 12px; color: var(--ink-faint); margin-top: 6px; }
+  .input-wrap { position: relative; display: flex; }
+  input[type=text], input[type=password] {
+    width: 100%; padding: 13px 14px; font-size: 16px;
+    border: 1px solid var(--line); border-radius: 12px;
+    background: var(--bg); color: var(--ink); outline: none;
+    transition: border-color .15s;
+  }
+  input:focus { border-color: var(--accent); }
+  .reveal {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; color: var(--ink-faint); cursor: pointer;
+    padding: 8px; border-radius: 8px; font-size: 13px;
+  }
+  .sheet-actions { display: flex; gap: 10px; margin-top: 4px; }
+  .btn {
+    appearance: none; border: none; cursor: pointer; font-size: 15px; font-weight: 600;
+    padding: 13px 16px; border-radius: 12px; flex: 1; transition: transform .1s, filter .2s;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn-primary { background: var(--accent); color: var(--accent-ink); }
+  .btn-ghost { background: var(--bg); color: var(--ink-soft); border: 1px solid var(--line); flex: 0 0 auto; }
+  .save-note { font-size: 12px; color: var(--accent); margin-top: 10px; height: 14px; text-align: center; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand"><span class="dot"></span> Live Transcribe</div>
+    <button class="icon-btn" id="gear" aria-label="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+      </svg>
+    </button>
+  </header>
+
+  <main id="transcript">
+    <div class="empty" id="empty">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+        <line x1="12" y1="19" x2="12" y2="23"></line>
+        <line x1="8" y1="23" x2="16" y2="23"></line>
+      </svg>
+      <h2>Ready when you are</h2>
+      <p>Tap the record button below to start live transcription. Add your Soniox API key in settings first.</p>
+    </div>
+  </main>
+
+  <footer>
+    <div class="status" id="status">
+      <span class="led"></span>
+      <span class="txt" id="statusText">Idle</span>
+    </div>
+    <button class="ghost-btn" id="clearBtn">Clear</button>
+    <button class="rec-btn" id="recBtn" aria-label="Record">
+      <span class="ic"></span>
+    </button>
+  </footer>
+
+  <div class="overlay" id="overlay"></div>
+  <aside class="sheet" id="sheet" role="dialog" aria-modal="true" aria-label="Settings">
+    <div class="grabber"></div>
+    <h2>Settings</h2>
+    <p class="sub">Your key is stored only in this browser (as a cookie) and sent directly to Soniox.</p>
+    <div class="field">
+      <label for="apiKey">Soniox API key</label>
+      <div class="input-wrap">
+        <input type="password" id="apiKey" placeholder="Paste your API key" autocomplete="off" spellcheck="false">
+        <button class="reveal" id="reveal" type="button">Show</button>
+      </div>
+      <div class="hint">Get one at console.soniox.com</div>
+    </div>
+    <div class="field">
+      <label for="langHints">Language hints <span style="font-weight:400">(optional)</span></label>
+      <input type="text" id="langHints" placeholder="e.g. en, es" autocomplete="off" spellcheck="false">
+      <div class="hint">Comma-separated language codes improve accuracy.</div>
+    </div>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" id="clearKeyBtn">Clear</button>
+      <button class="btn btn-primary" id="saveBtn">Save</button>
+    </div>
+    <div class="save-note" id="saveNote"></div>
+  </aside>
+
+<script type="module">
+const SDK_URL = 'https://cdn.jsdelivr.net/npm/@soniox/speech-to-text-web/+esm';
+const MODEL = 'stt-rt-preview';
+
+function setCookie(name, value, days = 365) {
+  const maxAge = days * 24 * 60 * 60;
+  document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Strict`;
+}
+function getCookie(name) {
+  const m = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/([.$?*|{}()[\]\\/+^])/g, '\\$1') + '=([^;]*)'));
+  return m ? decodeURIComponent(m[1]) : '';
+}
+function deleteCookie(name) {
+  document.cookie = `${name}=; Max-Age=0; Path=/; SameSite=Strict`;
+}
+const KEY_COOKIE = 'soniox_api_key';
+const LANG_COOKIE = 'soniox_language_hints';
+
+const el = (id) => document.getElementById(id);
+const gear = el('gear'), overlay = el('overlay'), sheet = el('sheet');
+const apiKeyInput = el('apiKey'), langInput = el('langHints');
+const recBtn = el('recBtn'), statusEl = el('status'), statusText = el('statusText');
+const transcriptEl = el('transcript'), emptyEl = el('empty'), clearBtn = el('clearBtn');
+
+function openSheet() { overlay.classList.add('open'); sheet.classList.add('open'); }
+function closeSheet() { overlay.classList.remove('open'); sheet.classList.remove('open'); el('saveNote').textContent = ''; }
+gear.addEventListener('click', () => {
+  apiKeyInput.value = getCookie(KEY_COOKIE);
+  langInput.value = getCookie(LANG_COOKIE);
+  openSheet();
+});
+overlay.addEventListener('click', closeSheet);
+
+el('reveal').addEventListener('click', () => {
+  const show = apiKeyInput.type === 'password';
+  apiKeyInput.type = show ? 'text' : 'password';
+  el('reveal').textContent = show ? 'Hide' : 'Show';
+});
+el('saveBtn').addEventListener('click', () => {
+  const key = apiKeyInput.value.trim();
+  if (key) setCookie(KEY_COOKIE, key); else deleteCookie(KEY_COOKIE);
+  const lang = langInput.value.trim();
+  if (lang) setCookie(LANG_COOKIE, lang); else deleteCookie(LANG_COOKIE);
+  el('saveNote').textContent = 'Saved';
+  setTimeout(closeSheet, 600);
+});
+el('clearKeyBtn').addEventListener('click', () => {
+  deleteCookie(KEY_COOKIE); deleteCookie(LANG_COOKIE);
+  apiKeyInput.value = ''; langInput.value = '';
+  el('saveNote').textContent = 'Cleared';
+});
+
+function setStatus(state, text) {
+  statusEl.className = 'status' + (state ? ' is-' + state : '');
+  statusText.textContent = text;
+}
+
+let committed = [];
+let client = null;
+let recording = false;
+
+function speakerLabel(s) { return s ? `Speaker ${s}` : null; }
+
+function isBreak(tok) {
+  const t = (tok.text || '').trim();
+  return t === '<end>' || t === '<fin>';
+}
+
+function renderTokens(allTokens) {
+  emptyEl.style.display = 'none';
+  const segs = [];
+  let cur = null;
+  for (const tok of allTokens) {
+    if (isBreak(tok)) { cur = null; continue; }
+    const text = tok.text || '';
+    if (!text) continue;
+    const spk = tok.speaker || null;
+    const lang = tok.language || null;
+    const interim = !tok.is_final;
+    if (!cur || cur.speaker !== spk) {
+      cur = { speaker: spk, lang, runs: [] };
+      segs.push(cur);
+    }
+    if (lang && !cur.lang) cur.lang = lang;
+    const last = cur.runs[cur.runs.length - 1];
+    if (last && last.interim === interim) last.text += text;
+    else cur.runs.push({ text, interim });
+  }
+
+  transcriptEl.querySelectorAll('.seg').forEach(n => n.remove());
+  for (const seg of segs) {
+    const div = document.createElement('div');
+    div.className = 'seg';
+    const spkLabel = speakerLabel(seg.speaker);
+    if (spkLabel || seg.lang) {
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      if (spkLabel) { const c = document.createElement('span'); c.className = 'chip'; c.textContent = spkLabel; meta.appendChild(c); }
+      if (seg.lang) { const c = document.createElement('span'); c.className = 'chip'; c.textContent = seg.lang; meta.appendChild(c); }
+      div.appendChild(meta);
+    }
+    const txt = document.createElement('div');
+    txt.className = 'text';
+    for (const run of seg.runs) {
+      const span = document.createElement('span');
+      if (run.interim) span.className = 'interim';
+      span.textContent = run.text;
+      txt.appendChild(span);
+    }
+    div.appendChild(txt);
+    transcriptEl.appendChild(div);
+  }
+
+  const nearBottom = transcriptEl.scrollHeight - transcriptEl.scrollTop - transcriptEl.clientHeight < 120;
+  if (nearBottom) transcriptEl.scrollTop = transcriptEl.scrollHeight;
+}
+
+function onPartialResult(result) {
+  const tokens = result.tokens || [];
+  const interim = [];
+  for (const tok of tokens) {
+    if (tok.is_final) committed.push(tok);
+    else interim.push(tok);
+  }
+  renderTokens([...committed, ...interim]);
+}
+
+function clearTranscript() {
+  committed = [];
+  transcriptEl.querySelectorAll('.seg').forEach(n => n.remove());
+  emptyEl.style.display = '';
+}
+clearBtn.addEventListener('click', () => { if (!recording) clearTranscript(); });
+
+function friendlyError(status, message, code) {
+  switch (status) {
+    case 'get_user_media_failed': return 'Microphone permission denied or unavailable';
+    case 'api_key_fetch_failed': return 'Could not read API key';
+    case 'api_error': return `Soniox error${code ? ' (' + code + ')' : ''} — check your API key`;
+    case 'websocket_error': return 'Connection lost';
+    case 'queue_limit_exceeded': return 'Audio buffer overflowed';
+    case 'media_recorder_error': return 'Audio recording error';
+    default: return message || 'Something went wrong';
+  }
+}
+
+function setRecordingUI(on) {
+  recording = on;
+  recBtn.classList.toggle('recording', on);
+  recBtn.setAttribute('aria-label', on ? 'Stop' : 'Record');
+}
+
+async function startRecording() {
+  const apiKey = getCookie(KEY_COOKIE).trim();
+  if (!apiKey) {
+    openSheet();
+    el('saveNote').textContent = 'Add your Soniox API key to start';
+    return;
+  }
+
+  setStatus('connecting', 'Connecting…');
+  recBtn.disabled = true;
+
+  let SonioxClient;
+  try {
+    ({ SonioxClient } = await import(SDK_URL));
+  } catch (e) {
+    setStatus('error', 'Failed to load transcription engine');
+    recBtn.disabled = false;
+    return;
+  }
+
+  const langHints = getCookie(LANG_COOKIE).split(',').map(s => s.trim()).filter(Boolean);
+
+  client = new SonioxClient({
+    apiKey,
+    onStarted: () => { setRecordingUI(true); setStatus('recording', 'Recording…'); recBtn.disabled = false; },
+    onFinished: () => { setRecordingUI(false); setStatus('finished', 'Finished'); recBtn.disabled = false; client = null; },
+    onError: (status, message, code) => {
+      setRecordingUI(false);
+      setStatus('error', friendlyError(status, message, code));
+      recBtn.disabled = false;
+      client = null;
+    },
+  });
+
+  const startOpts = {
+    model: MODEL,
+    audioFormat: 'auto',
+    enableSpeakerDiarization: true,
+    enableLanguageIdentification: true,
+    enableEndpointDetection: true,
+    onPartialResult,
+  };
+  if (langHints.length) startOpts.languageHints = langHints;
+
+  try {
+    await client.start(startOpts);
+  } catch (e) {
+    setRecordingUI(false);
+    setStatus('error', friendlyError('', e && e.message));
+    recBtn.disabled = false;
+    client = null;
+  }
+}
+
+function stopRecording() {
+  if (!client) return;
+  setStatus('connecting', 'Finishing…');
+  recBtn.disabled = true;
+  try { client.stop(); } catch (e) {}
+  setTimeout(() => { recBtn.disabled = false; }, 4000);
+}
+
+recBtn.addEventListener('click', () => {
+  if (recording) stopRecording();
+  else startRecording();
+});
+
+setStatus('', 'Idle');
+</script>
+</body>
+</html>
