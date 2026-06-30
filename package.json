@@ -10,12 +10,10 @@
   },
   "scripts": {
     "start": "node server.js",
-    "migrate": "node-pg-migrate",
-    "migrate:up": "node-pg-migrate up"
+    "migrate": "node migrate.js"
   },
   "dependencies": {
     "express": "^4.21.2",
-    "node-pg-migrate": "^8.0.4",
     "pg": "^8.13.1"
   }
 }
