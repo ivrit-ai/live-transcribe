@@ -216,22 +216,45 @@
   .save-note { font-size: 12px; color: var(--accent); margin-top: 10px; height: 14px; text-align: center; }
   .field.two-col { display: flex; gap: 12px; }
   .field.two-col > div { flex: 1; min-width: 0; }
-  .stats { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
-  .stats-head { font-size: 12px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 10px; }
-  .stat-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 14px; padding: 4px 0; }
+  .stat-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 15px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .stat-row:last-child { border-bottom: none; }
   .stat-label { color: var(--ink-soft); }
-  .stat-val { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stat-val { font-weight: 600; font-variant-numeric: tabular-nums; font-size: 17px; }
+
+  /* Stats live in the footer on desktop, on a separate page on mobile. */
+  .mobile-only { display: grid; }
+  @media (min-width: 600px) { .mobile-only { display: none; } }
+  .footer-stats { display: none; }
+  @media (min-width: 600px) {
+    .footer-stats {
+      display: flex; gap: 16px; align-items: center;
+      font-size: 13px; color: var(--ink-faint); white-space: nowrap;
+    }
+  }
+  .footer-stats span { display: inline-flex; align-items: center; gap: 5px; }
+  .footer-stats svg { width: 15px; height: 15px; opacity: .7; }
+  .footer-stats b { color: var(--ink-soft); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .header-actions { display: flex; gap: 8px; }
 </style>
 </head>
 <body>
   <header>
     <div class="brand"><span class="dot"></span> Live Transcribe</div>
-    <button class="icon-btn" id="gear" aria-label="Settings">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="3"></circle>
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-      </svg>
-    </button>
+    <div class="header-actions">
+      <button class="icon-btn mobile-only" id="statsBtn" aria-label="Usage stats">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="20" x2="18" y2="10"></line>
+          <line x1="12" y1="20" x2="12" y2="4"></line>
+          <line x1="6" y1="20" x2="6" y2="14"></line>
+        </svg>
+      </button>
+      <button class="icon-btn" id="gear" aria-label="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </button>
+    </div>
   </header>
 
   <main id="transcript">
@@ -252,6 +275,20 @@
       <span class="led"></span>
       <span class="txt" id="statusText">Idle</span>
     </div>
+    <div class="footer-stats" id="footerStats">
+      <span title="Unique users (last 7 days)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+        <b id="fsUsers">—</b>
+      </span>
+      <span title="Transcribed (last 7 days)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15 14"></polyline></svg>
+        <b id="fsWeek">—</b>
+      </span>
+      <span title="Transcribed (all time)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10"></path><path d="M18 20V4"></path><path d="M6 20v-4"></path></svg>
+        <b id="fsEver">—</b>
+      </span>
+    </div>
     <button class="ghost-btn" id="clearBtn">Clear</button>
     <button class="rec-btn" id="recBtn" aria-label="Record">
       <span class="ic"></span>
@@ -262,7 +299,7 @@
   <aside class="sheet" id="sheet" role="dialog" aria-modal="true" aria-label="Settings">
     <div class="grabber"></div>
     <h2>Settings</h2>
-    <p class="sub">Your key is stored only in this browser (as a cookie) and sent directly to Soniox. Anonymous usage (a random id and seconds transcribed) is recorded for the stats below — never your audio, text, or key.</p>
+    <p class="sub">Your key is stored only in this browser (as a cookie) and sent directly to Soniox. Anonymous usage (a random id and seconds transcribed) is recorded for usage statistics — never your audio, text, or key.</p>
     <div class="field">
       <label for="apiKey">Soniox API key</label>
       <div class="input-wrap">
@@ -293,12 +330,16 @@
       <button class="btn btn-primary" id="saveBtn">Save</button>
     </div>
     <div class="save-note" id="saveNote"></div>
-    <div class="stats" id="stats">
-      <div class="stats-head">Usage</div>
-      <div class="stat-row"><span class="stat-label">Unique users (7d)</span><span class="stat-val" id="statUsers">—</span></div>
-      <div class="stat-row"><span class="stat-label">Transcribed (7d)</span><span class="stat-val" id="statWeek">—</span></div>
-      <div class="stat-row"><span class="stat-label">Transcribed (all time)</span><span class="stat-val" id="statEver">—</span></div>
-    </div>
+  </aside>
+
+  <div class="overlay" id="statsOverlay"></div>
+  <aside class="sheet" id="statsSheet" role="dialog" aria-modal="true" aria-label="Usage statistics">
+    <div class="grabber"></div>
+    <h2>Usage</h2>
+    <p class="sub">Anonymous totals across everyone using Live Transcribe. Only a random id and seconds transcribed are recorded — never audio, text, or keys.</p>
+    <div class="stat-row"><span class="stat-label">Unique users (7d)</span><span class="stat-val" id="statUsers">—</span></div>
+    <div class="stat-row"><span class="stat-label">Transcribed (7d)</span><span class="stat-val" id="statWeek">—</span></div>
+    <div class="stat-row"><span class="stat-label">Transcribed (all time)</span><span class="stat-val" id="statEver">—</span></div>
   </aside>
 
 <script type="module">
@@ -346,9 +387,14 @@ gear.addEventListener('click', () => {
   silenceInput.value = getIntSetting(SILENCE_COOKIE, DEFAULT_SILENCE_SEC);
   maxTimeInput.value = getIntSetting(MAXTIME_COOKIE, DEFAULT_MAXTIME_MIN);
   openSheet();
-  refreshStats();
 });
 overlay.addEventListener('click', closeSheet);
+
+const statsOverlay = el('statsOverlay'), statsSheet = el('statsSheet');
+function openStats() { statsOverlay.classList.add('open'); statsSheet.classList.add('open'); refreshStats(); }
+function closeStats() { statsOverlay.classList.remove('open'); statsSheet.classList.remove('open'); }
+el('statsBtn').addEventListener('click', openStats);
+statsOverlay.addEventListener('click', closeStats);
 
 el('reveal').addEventListener('click', () => {
   const show = apiKeyInput.type === 'password';
@@ -687,18 +733,24 @@ function fmtDuration(sec) {
   return `${s}s`;
 }
 
+function setStat(id, text) { const node = el(id); if (node) node.textContent = text; }
+
 async function refreshStats() {
   try {
     const res = await fetch('/api/stats', { headers: { Accept: 'application/json' } });
     if (!res.ok) return;
     const d = await res.json();
-    el('statUsers').textContent = (d.uniqueUsers7d ?? 0).toLocaleString();
-    el('statWeek').textContent = fmtDuration(d.seconds7d ?? 0);
-    el('statEver').textContent = fmtDuration(d.secondsEver ?? 0);
+    const users = (d.uniqueUsers7d ?? 0).toLocaleString();
+    const week = fmtDuration(d.seconds7d ?? 0);
+    const ever = fmtDuration(d.secondsEver ?? 0);
+    setStat('statUsers', users); setStat('statWeek', week); setStat('statEver', ever);
+    setStat('fsUsers', users); setStat('fsWeek', week); setStat('fsEver', ever);
   } catch (e) {}
 }
 
 setStatus('', 'Idle');
+refreshStats();
+setInterval(refreshStats, 60000);
 </script>
 </body>
 </html>
