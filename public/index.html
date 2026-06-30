@@ -214,6 +214,13 @@
   .btn-primary { background: var(--accent); color: var(--accent-ink); }
   .btn-ghost { background: var(--bg); color: var(--ink-soft); border: 1px solid var(--line); flex: 0 0 auto; }
   .save-note { font-size: 12px; color: var(--accent); margin-top: 10px; height: 14px; text-align: center; }
+  .field.two-col { display: flex; gap: 12px; }
+  .field.two-col > div { flex: 1; min-width: 0; }
+  .stats { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .stats-head { font-size: 12px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 10px; }
+  .stat-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 14px; padding: 4px 0; }
+  .stat-label { color: var(--ink-soft); }
+  .stat-val { font-weight: 600; font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
@@ -255,7 +262,7 @@
   <aside class="sheet" id="sheet" role="dialog" aria-modal="true" aria-label="Settings">
     <div class="grabber"></div>
     <h2>Settings</h2>
-    <p class="sub">Your key is stored only in this browser (as a cookie) and sent directly to Soniox.</p>
+    <p class="sub">Your key is stored only in this browser (as a cookie) and sent directly to Soniox. Anonymous usage (a random id and seconds transcribed) is recorded for the stats below — never your audio, text, or key.</p>
     <div class="field">
       <label for="apiKey">Soniox API key</label>
       <div class="input-wrap">
@@ -269,11 +276,29 @@
       <input type="text" id="langHints" placeholder="e.g. en, es" autocomplete="off" spellcheck="false">
       <div class="hint">Comma-separated language codes improve accuracy.</div>
     </div>
+    <div class="field two-col">
+      <div>
+        <label for="silenceTimeout">Stop on silence <span style="font-weight:400">(seconds)</span></label>
+        <input type="number" id="silenceTimeout" inputmode="numeric" min="0" step="1" placeholder="10" autocomplete="off">
+        <div class="hint">No new text for this long ends the session. 0 = off.</div>
+      </div>
+      <div>
+        <label for="maxTime">Max time <span style="font-weight:400">(minutes)</span></label>
+        <input type="number" id="maxTime" inputmode="numeric" min="0" step="1" placeholder="2" autocomplete="off">
+        <div class="hint">Hard cap on session length. 0 = off.</div>
+      </div>
+    </div>
     <div class="sheet-actions">
       <button class="btn btn-ghost" id="clearKeyBtn">Clear</button>
       <button class="btn btn-primary" id="saveBtn">Save</button>
     </div>
     <div class="save-note" id="saveNote"></div>
+    <div class="stats" id="stats">
+      <div class="stats-head">Usage</div>
+      <div class="stat-row"><span class="stat-label">Unique users (7d)</span><span class="stat-val" id="statUsers">—</span></div>
+      <div class="stat-row"><span class="stat-label">Transcribed (7d)</span><span class="stat-val" id="statWeek">—</span></div>
+      <div class="stat-row"><span class="stat-label">Transcribed (all time)</span><span class="stat-val" id="statEver">—</span></div>
+    </div>
   </aside>
 
 <script type="module">
@@ -293,10 +318,23 @@ function deleteCookie(name) {
 }
 const KEY_COOKIE = 'soniox_api_key';
 const LANG_COOKIE = 'soniox_language_hints';
+const SILENCE_COOKIE = 'soniox_silence_timeout';
+const MAXTIME_COOKIE = 'soniox_max_time_min';
+const DEFAULT_SILENCE_SEC = 10;
+const DEFAULT_MAXTIME_MIN = 2;
+
+// Read a non-negative integer setting from its cookie; blank/absent => default. 0 = disabled.
+function getIntSetting(name, def) {
+  const raw = getCookie(name);
+  if (raw === '') return def;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 0 ? n : def;
+}
 
 const el = (id) => document.getElementById(id);
 const gear = el('gear'), overlay = el('overlay'), sheet = el('sheet');
 const apiKeyInput = el('apiKey'), langInput = el('langHints');
+const silenceInput = el('silenceTimeout'), maxTimeInput = el('maxTime');
 const recBtn = el('recBtn'), statusEl = el('status'), statusText = el('statusText');
 const transcriptEl = el('transcript'), emptyEl = el('empty'), clearBtn = el('clearBtn');
 
@@ -305,7 +343,10 @@ function closeSheet() { overlay.classList.remove('open'); sheet.classList.remove
 gear.addEventListener('click', () => {
   apiKeyInput.value = getCookie(KEY_COOKIE);
   langInput.value = getCookie(LANG_COOKIE);
+  silenceInput.value = getIntSetting(SILENCE_COOKIE, DEFAULT_SILENCE_SEC);
+  maxTimeInput.value = getIntSetting(MAXTIME_COOKIE, DEFAULT_MAXTIME_MIN);
   openSheet();
+  refreshStats();
 });
 overlay.addEventListener('click', closeSheet);
 
@@ -319,9 +360,19 @@ el('saveBtn').addEventListener('click', () => {
   if (key) setCookie(KEY_COOKIE, key); else deleteCookie(KEY_COOKIE);
   const lang = langInput.value.trim();
   if (lang) setCookie(LANG_COOKIE, lang); else deleteCookie(LANG_COOKIE);
+  saveIntSetting(SILENCE_COOKIE, silenceInput.value, DEFAULT_SILENCE_SEC);
+  saveIntSetting(MAXTIME_COOKIE, maxTimeInput.value, DEFAULT_MAXTIME_MIN);
   el('saveNote').textContent = 'Saved';
   setTimeout(closeSheet, 600);
 });
+
+// Persist an integer setting: blank restores the default; clamp negatives to 0.
+function saveIntSetting(name, value, def) {
+  const trimmed = String(value).trim();
+  if (trimmed === '') { deleteCookie(name); return; }
+  const n = Number.parseInt(trimmed, 10);
+  setCookie(name, String(Number.isFinite(n) && n >= 0 ? n : def));
+}
 el('clearKeyBtn').addEventListener('click', () => {
   deleteCookie(KEY_COOKIE); deleteCookie(LANG_COOKIE);
   apiKeyInput.value = ''; langInput.value = '';
@@ -337,6 +388,38 @@ let committed = [];
 let segNodes = [];
 let client = null;
 let recording = false;
+
+// Session guards: enforce a silence (no-new-text) timeout and a hard max-duration
+// client-side, because Soniox keeps a socket open as long as audio streams — and a
+// silent mic still streams audio. Also reported here is the session length for stats.
+let sessionStart = 0;
+let lastTextAt = 0;
+let guardTimer = null;
+let reported = false;
+
+function clearGuard() {
+  if (guardTimer) { clearInterval(guardTimer); guardTimer = null; }
+}
+
+function guardTick() {
+  if (!recording) return;
+  const now = Date.now();
+  const silenceMs = getIntSetting(SILENCE_COOKIE, DEFAULT_SILENCE_SEC) * 1000;
+  const maxMs = getIntSetting(MAXTIME_COOKIE, DEFAULT_MAXTIME_MIN) * 60 * 1000;
+  if (maxMs > 0 && now - sessionStart >= maxMs) { stopBecause('max'); return; }
+  if (silenceMs > 0 && now - lastTextAt >= silenceMs) { stopBecause('silence'); }
+}
+
+function stopBecause(reason) {
+  if (!recording) return;
+  const msg = reason === 'silence' ? 'Stopped — silence timeout'
+            : reason === 'max' ? 'Stopped — time limit reached'
+            : reason === 'hidden' ? 'Stopped — left tab'
+            : 'Stopping…';
+  reportUsage();
+  stopRecording();
+  setStatus('finished', msg);
+}
 
 function speakerLabel(s) { return s ? `Speaker ${s}` : null; }
 
@@ -438,6 +521,7 @@ function onPartialResult(result) {
   const tokens = result.tokens || [];
   const interim = [];
   for (const tok of tokens) {
+    if ((tok.text || '').trim()) lastTextAt = Date.now();
     if (tok.is_final) committed.push(tok);
     else interim.push(tok);
   }
@@ -494,9 +578,26 @@ async function startRecording() {
 
   client = new SonioxClient({
     apiKey,
-    onStarted: () => { setRecordingUI(true); setStatus('recording', 'Recording…'); recBtn.disabled = false; },
-    onFinished: () => { setRecordingUI(false); setStatus('finished', 'Finished'); recBtn.disabled = false; client = null; },
+    onStarted: () => {
+      setRecordingUI(true);
+      setStatus('recording', 'Recording…');
+      recBtn.disabled = false;
+      sessionStart = lastTextAt = Date.now();
+      reported = false;
+      clearGuard();
+      guardTimer = setInterval(guardTick, 1000);
+    },
+    onFinished: () => {
+      clearGuard();
+      reportUsage();
+      setRecordingUI(false);
+      setStatus('finished', 'Finished');
+      recBtn.disabled = false;
+      client = null;
+    },
     onError: (status, message, code) => {
+      clearGuard();
+      reportUsage();
       setRecordingUI(false);
       setStatus('error', friendlyError(status, message, code));
       recBtn.disabled = false;
@@ -526,6 +627,7 @@ async function startRecording() {
 
 function stopRecording() {
   if (!client) return;
+  clearGuard();
   setStatus('connecting', 'Finishing…');
   recBtn.disabled = true;
   try { client.stop(); } catch (e) {}
@@ -536,6 +638,65 @@ recBtn.addEventListener('click', () => {
   if (recording) stopRecording();
   else startRecording();
 });
+
+// A backgrounded desktop tab keeps the mic streaming and the Soniox socket open,
+// so stop as soon as the page is hidden. (Background timers are throttled, making
+// this the reliable guard; the silence/max timers are the foreground backup.)
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && recording) stopBecause('hidden');
+});
+// Last-ditch flush if the page is being torn down mid-session.
+window.addEventListener('pagehide', () => { if (recording) reportUsage(); });
+
+// ---- Usage stats: anonymous id + session seconds ----
+const ANON_KEY = 'lt_anon_id';
+function getAnonId() {
+  let id = '';
+  try { id = localStorage.getItem(ANON_KEY) || ''; } catch (e) {}
+  if (!/^[0-9a-f-]{36}$/i.test(id)) {
+    id = (crypto.randomUUID && crypto.randomUUID()) || '';
+    try { localStorage.setItem(ANON_KEY, id); } catch (e) {}
+  }
+  return id;
+}
+
+// Report the just-finished session's length once. Uses sendBeacon so it survives
+// the page being hidden or unloaded; falls back to fetch with keepalive.
+function reportUsage() {
+  if (reported || !sessionStart) return;
+  reported = true;
+  const seconds = Math.round((Date.now() - sessionStart) / 1000);
+  if (seconds <= 0) return;
+  const anonId = getAnonId();
+  if (!anonId) return;
+  const body = JSON.stringify({ anonId, seconds });
+  try {
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon('/api/usage', new Blob([body], { type: 'application/json' }));
+    } else {
+      fetch('/api/usage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true });
+    }
+  } catch (e) {}
+}
+
+function fmtDuration(sec) {
+  sec = Math.max(0, Math.round(sec));
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  if (h) return `${h}h ${m}m`;
+  if (m) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+async function refreshStats() {
+  try {
+    const res = await fetch('/api/stats', { headers: { Accept: 'application/json' } });
+    if (!res.ok) return;
+    const d = await res.json();
+    el('statUsers').textContent = (d.uniqueUsers7d ?? 0).toLocaleString();
+    el('statWeek').textContent = fmtDuration(d.seconds7d ?? 0);
+    el('statEver').textContent = fmtDuration(d.secondsEver ?? 0);
+  } catch (e) {}
+}
 
 setStatus('', 'Idle');
 </script>

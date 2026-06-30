@@ -1,0 +1,21 @@
+{
+  "name": "live-transcribe",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Live speech transcription with anonymous usage stats",
+  "type": "commonjs",
+  "main": "server.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "migrate": "node-pg-migrate",
+    "migrate:up": "node-pg-migrate up"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "node-pg-migrate": "^8.0.4",
+    "pg": "^8.13.1"
+  }
+}
