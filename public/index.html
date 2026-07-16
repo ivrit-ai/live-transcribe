@@ -235,12 +235,51 @@
   .footer-stats svg { width: 15px; height: 15px; opacity: .7; }
   .footer-stats b { color: var(--ink-soft); font-weight: 600; font-variant-numeric: tabular-nums; }
   .header-actions { display: flex; gap: 8px; }
+
+  /* Full-screen transcription-log page (slides in from the right, its own tab). */
+  .page {
+    position: fixed; inset: 0; z-index: 30;
+    background: var(--bg);
+    display: flex; flex-direction: column;
+    transform: translateX(100%); visibility: hidden;
+    transition: transform .26s cubic-bezier(.2,.8,.2,1);
+  }
+  .page.open { transform: translateX(0); visibility: visible; }
+  .page-head {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 18px; padding-top: max(14px, env(safe-area-inset-top));
+    border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  .page-title { flex: 1; font-weight: 700; font-size: 17px; }
+  .page-body {
+    flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    padding: 16px 18px max(18px, env(safe-area-inset-bottom));
+  }
+  .log-summary { font-size: 13px; color: var(--ink-soft); margin-bottom: 8px; }
+  .log-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    padding: 12px 2px; border-bottom: 1px solid var(--line);
+  }
+  .log-info { min-width: 0; }
+  .log-day { font-size: 12px; color: var(--ink-faint); margin-bottom: 3px; }
+  .log-times { font-size: 15px; font-variant-numeric: tabular-nums; }
+  .log-meta { font-size: 12px; color: var(--ink-faint); margin-top: 4px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .log-dur { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .log-state { text-align: center; color: var(--ink-faint); padding: 44px 16px; font-size: 14px; line-height: 1.6; }
+  .log-state.err { color: var(--rec); }
+  .link { color: var(--accent); cursor: pointer; text-decoration: underline; background: none; border: none; font: inherit; padding: 0; }
 </style>
 </head>
 <body>
   <header>
     <div class="brand"><span class="dot"></span> Live Transcribe</div>
     <div class="header-actions">
+      <button class="icon-btn" id="logsBtn" aria-label="Transcription log">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line>
+          <line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line>
+        </svg>
+      </button>
       <button class="icon-btn mobile-only" id="statsBtn" aria-label="Usage stats">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="18" y1="20" x2="18" y2="10"></line>
@@ -341,6 +380,24 @@
     <div class="stat-row"><span class="stat-label">Transcribed (7d)</span><span class="stat-val" id="statWeek">—</span></div>
     <div class="stat-row"><span class="stat-label">Transcribed (all time)</span><span class="stat-val" id="statEver">—</span></div>
   </aside>
+
+  <section class="page" id="logsPage" aria-hidden="true" aria-label="Transcription log">
+    <div class="page-head">
+      <button class="icon-btn" id="logsBack" aria-label="Back">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline>
+        </svg>
+      </button>
+      <div class="page-title">Transcription log</div>
+      <button class="icon-btn" id="logsRefresh" aria-label="Refresh">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+        </svg>
+      </button>
+    </div>
+    <div class="page-body" id="logsBody"></div>
+  </section>
 
 <script type="module">
 const SDK_URL = 'https://cdn.jsdelivr.net/npm/@soniox/speech-to-text-web/+esm';
@@ -746,6 +803,142 @@ async function refreshStats() {
     setStat('statUsers', users); setStat('statWeek', week); setStat('statEver', ever);
     setStat('fsUsers', users); setStat('fsWeek', week); setStat('fsEver', ever);
   } catch (e) {}
+}
+
+// ---- Transcription log viewer: reads Soniox usage-logs directly with the
+// user's own key (CORS-open, so the key stays in the browser). Scoped to that
+// key's Soniox project; window is the last 30 days (endpoint caps at 31). ----
+const SONIOX_API = 'https://api.soniox.com/v1';
+const logsPage = el('logsPage'), logsBody = el('logsBody');
+let logsLoading = false;
+
+function openLogs() {
+  logsPage.classList.add('open');
+  logsPage.setAttribute('aria-hidden', 'false');
+  loadLogs();
+}
+function closeLogs() {
+  logsPage.classList.remove('open');
+  logsPage.setAttribute('aria-hidden', 'true');
+}
+el('logsBtn').addEventListener('click', openLogs);
+el('logsBack').addEventListener('click', closeLogs);
+el('logsRefresh').addEventListener('click', () => { if (!logsLoading) loadLogs(); });
+
+function isoNoMs(d) { return d.toISOString().replace(/\.\d{3}Z$/, 'Z'); }
+function fmtDay(iso) { return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }); }
+function fmtClock(iso) { return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
+function sessionSeconds(e) { return Math.max(0, (new Date(e.end_time) - new Date(e.start_time)) / 1000); }
+
+function logState(text, isErr) {
+  logsBody.textContent = '';
+  const d = document.createElement('div');
+  d.className = 'log-state' + (isErr ? ' err' : '');
+  d.textContent = text;
+  logsBody.appendChild(d);
+  return d;
+}
+
+// Page through the whole 30-day window (1000/page, cursor-based).
+async function fetchAllLogs(key) {
+  const end = new Date();
+  const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const out = [];
+  let cursor = null, pages = 0;
+  do {
+    const url = new URL(SONIOX_API + '/usage-logs');
+    url.searchParams.set('start_time', isoNoMs(start));
+    url.searchParams.set('end_time', isoNoMs(end));
+    url.searchParams.set('sort', 'end_time_desc');
+    url.searchParams.set('limit', '1000');
+    if (cursor) url.searchParams.set('cursor', cursor);
+    const res = await fetch(url.toString(), { headers: { Authorization: 'Bearer ' + key } });
+    if (!res.ok) { const err = new Error('http ' + res.status); err.status = res.status; throw err; }
+    const data = await res.json();
+    for (const e of (data.usage_logs || [])) out.push(e);
+    cursor = data.next_page_cursor || null;
+    pages++;
+  } while (cursor && pages < 10);
+  return out;
+}
+
+async function loadLogs() {
+  const key = getCookie(KEY_COOKIE).trim();
+  if (!key) {
+    const d = logState('Add your Soniox API key in Settings to view your transcription log.', false);
+    const btn = document.createElement('button');
+    btn.className = 'link'; btn.textContent = 'Open Settings';
+    btn.style.cssText = 'display:block; margin:12px auto 0';
+    btn.addEventListener('click', () => { closeLogs(); gear.click(); });
+    d.appendChild(btn);
+    return;
+  }
+  logsLoading = true;
+  logState('Loading…', false);
+  let entries;
+  try {
+    entries = await fetchAllLogs(key);
+  } catch (e) {
+    const msg = e.status === 401 ? 'Invalid API key — check it in Settings.'
+      : e.status === 429 ? 'Soniox rate limit hit. Try again in a moment.'
+      : e.status === 400 ? 'Soniox rejected the request (time range).'
+      : 'Could not load logs from Soniox. Check your connection.';
+    logState(msg, true);
+    logsLoading = false;
+    return;
+  }
+  logsLoading = false;
+  renderLogs(entries);
+}
+
+function renderLogs(entries) {
+  // Speech-to-text requests only (exclude TTS etc.); already newest-first.
+  const stt = entries.filter((e) => (e.model || '').startsWith('stt'));
+  logsBody.textContent = '';
+  if (!stt.length) { logState('No transcriptions in the last 30 days.', false); return; }
+
+  let totalSec = 0;
+  for (const e of stt) totalSec += sessionSeconds(e);
+  const summary = document.createElement('div');
+  summary.className = 'log-summary';
+  summary.textContent = `${stt.length} session${stt.length === 1 ? '' : 's'} · ${fmtDuration(totalSec)} · last 30 days`;
+  logsBody.appendChild(summary);
+
+  for (const e of stt) {
+    const row = document.createElement('div');
+    row.className = 'log-row';
+
+    const info = document.createElement('div');
+    info.className = 'log-info';
+    const day = document.createElement('div');
+    day.className = 'log-day';
+    day.textContent = fmtDay(e.end_time);
+    const times = document.createElement('div');
+    times.className = 'log-times';
+    times.textContent = `${fmtClock(e.start_time)} → ${fmtClock(e.end_time)}`;
+    info.append(day, times);
+
+    const meta = document.createElement('div');
+    meta.className = 'log-meta';
+    const model = document.createElement('span');
+    model.className = 'chip';
+    model.textContent = e.model || 'stt';
+    meta.appendChild(model);
+    const cost = Number(e.cost_usd);
+    if (Number.isFinite(cost) && cost > 0) {
+      const c = document.createElement('span');
+      c.textContent = '$' + cost.toFixed(4);
+      meta.appendChild(c);
+    }
+    info.appendChild(meta);
+
+    const dur = document.createElement('div');
+    dur.className = 'log-dur';
+    dur.textContent = fmtDuration(sessionSeconds(e));
+
+    row.append(info, dur);
+    logsBody.appendChild(row);
+  }
 }
 
 setStatus('', 'Idle');
