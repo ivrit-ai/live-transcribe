@@ -137,6 +137,15 @@ app.set('trust proxy', true);
 app.disable('x-powered-by');
 app.use(express.json({ limit: '4kb' }));
 
+// Cross-origin isolation lets the on-device model use multi-threaded WASM
+// (SharedArrayBuffer). Third-party loads (jsdelivr, Hugging Face, Soniox) are
+// all CORS requests, so require-corp doesn't block them.
+app.use((req, res, next) => {
+  res.set('Cross-Origin-Opener-Policy', 'same-origin');
+  res.set('Cross-Origin-Embedder-Policy', 'require-corp');
+  next();
+});
+
 app.get('/healthz', (req, res) => res.json({ ok: true }));
 
 app.post('/api/usage', (req, res) => {

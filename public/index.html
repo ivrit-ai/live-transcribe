@@ -199,7 +199,16 @@
     background: var(--bg); color: var(--ink); outline: none;
     transition: border-color .15s;
   }
-  input:focus { border-color: var(--accent); }
+  select {
+    width: 100%; padding: 12px 14px; font-size: 16px;
+    border: 1px solid var(--line); border-radius: 12px;
+    background: var(--bg); color: var(--ink); outline: none;
+    appearance: none; -webkit-appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--ink-faint) 50%), linear-gradient(135deg, var(--ink-faint) 50%, transparent 50%);
+    background-position: calc(100% - 20px) 50%, calc(100% - 14px) 50%;
+    background-size: 6px 6px; background-repeat: no-repeat;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
   .reveal {
     position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
     background: none; border: none; color: var(--ink-faint); cursor: pointer;
@@ -305,7 +314,7 @@
         <line x1="8" y1="23" x2="16" y2="23"></line>
       </svg>
       <h2>Ready when you are</h2>
-      <p>Tap the record button below to start live transcription. Add your Soniox API key in settings first.</p>
+      <p id="emptyText">Tap the record button below to start live transcription.</p>
     </div>
   </main>
 
@@ -338,7 +347,16 @@
   <aside class="sheet" id="sheet" role="dialog" aria-modal="true" aria-label="Settings">
     <div class="grabber"></div>
     <h2>Settings</h2>
-    <p class="sub">Your key is stored only in this browser (as a cookie) and sent directly to Soniox. Anonymous usage (a random id and seconds transcribed) is recorded for usage statistics — never your audio, text, or key.</p>
+    <p class="sub" id="settingsSub"></p>
+    <div class="field">
+      <label for="modelSel">Model</label>
+      <select id="modelSel">
+        <option value="zipformer">ivrit.ai Zipformer — on-device, Hebrew</option>
+        <option value="soniox">Soniox stt-rt-v5 — cloud, multilingual</option>
+      </select>
+      <div class="hint" id="modelHint"></div>
+    </div>
+    <div id="sonioxFields">
     <div class="field">
       <label for="apiKey">Soniox API key</label>
       <div class="input-wrap">
@@ -351,6 +369,7 @@
       <label for="langHints">Language hints <span style="font-weight:400">(optional)</span></label>
       <input type="text" id="langHints" placeholder="e.g. en, es" autocomplete="off" spellcheck="false">
       <div class="hint">Comma-separated language codes improve accuracy.</div>
+    </div>
     </div>
     <div class="field two-col">
       <div>
@@ -420,6 +439,9 @@ const SILENCE_COOKIE = 'soniox_silence_timeout';
 const MAXTIME_COOKIE = 'soniox_max_time_min';
 const DEFAULT_SILENCE_SEC = 10;
 const DEFAULT_MAXTIME_MIN = 2;
+const MODEL_COOKIE = 'lt_model';
+const DEFAULT_MODEL = 'zipformer';
+function getModel() { return getCookie(MODEL_COOKIE) === 'soniox' ? 'soniox' : DEFAULT_MODEL; }
 
 // Read a non-negative integer setting from its cookie; blank/absent => default. 0 = disabled.
 function getIntSetting(name, def) {
@@ -435,10 +457,35 @@ const apiKeyInput = el('apiKey'), langInput = el('langHints');
 const silenceInput = el('silenceTimeout'), maxTimeInput = el('maxTime');
 const recBtn = el('recBtn'), statusEl = el('status'), statusText = el('statusText');
 const transcriptEl = el('transcript'), emptyEl = el('empty'), clearBtn = el('clearBtn');
+const modelSel = el('modelSel');
+
+const MODEL_TEXT = {
+  zipformer: {
+    sub: 'Runs entirely in your browser — your audio never leaves this device. The model downloads once (about 72 MB) and is cached. Anonymous usage (a random id and seconds transcribed) is recorded for usage statistics — never your audio or text.',
+    hint: 'Hebrew. Runs on this device\'s CPU; no API key needed.',
+    empty: 'Tap the record button below to start live transcription. Speech is transcribed on this device; the first run downloads the model.',
+  },
+  soniox: {
+    sub: 'Your key is stored only in this browser (as a cookie) and sent directly to Soniox. Anonymous usage (a random id and seconds transcribed) is recorded for usage statistics — never your audio, text, or key.',
+    hint: 'Requires a Soniox API key.',
+    empty: 'Tap the record button below to start live transcription. Add your Soniox API key in settings first.',
+  },
+};
+function showModelFields(model) {
+  el('sonioxFields').style.display = model === 'soniox' ? '' : 'none';
+  el('settingsSub').textContent = MODEL_TEXT[model].sub;
+  el('modelHint').textContent = MODEL_TEXT[model].hint;
+}
+function applyModel() {
+  el('emptyText').textContent = MODEL_TEXT[getModel()].empty;
+}
+modelSel.addEventListener('change', () => showModelFields(modelSel.value));
 
 function openSheet() { overlay.classList.add('open'); sheet.classList.add('open'); }
 function closeSheet() { overlay.classList.remove('open'); sheet.classList.remove('open'); el('saveNote').textContent = ''; }
 gear.addEventListener('click', () => {
+  modelSel.value = getModel();
+  showModelFields(modelSel.value);
   apiKeyInput.value = getCookie(KEY_COOKIE);
   langInput.value = getCookie(LANG_COOKIE);
   silenceInput.value = getIntSetting(SILENCE_COOKIE, DEFAULT_SILENCE_SEC);
@@ -459,6 +506,8 @@ el('reveal').addEventListener('click', () => {
   el('reveal').textContent = show ? 'Hide' : 'Show';
 });
 el('saveBtn').addEventListener('click', () => {
+  if (modelSel.value === DEFAULT_MODEL) deleteCookie(MODEL_COOKIE); else setCookie(MODEL_COOKIE, modelSel.value);
+  applyModel();
   const key = apiKeyInput.value.trim();
   if (key) setCookie(KEY_COOKIE, key); else deleteCookie(KEY_COOKIE);
   const lang = langInput.value.trim();
@@ -510,6 +559,8 @@ function guardTick() {
   const silenceMs = getIntSetting(SILENCE_COOKIE, DEFAULT_SILENCE_SEC) * 1000;
   const maxMs = getIntSetting(MAXTIME_COOKIE, DEFAULT_MAXTIME_MIN) * 60 * 1000;
   if (maxMs > 0 && now - sessionStart >= maxMs) { stopBecause('max'); return; }
+  // A backlogged on-device engine hasn't heard the audio yet; that's not silence.
+  if (local.active && local.lag > 2) return;
   if (silenceMs > 0 && now - lastTextAt >= silenceMs) { stopBecause('silence'); }
 }
 
@@ -633,6 +684,7 @@ function onPartialResult(result) {
 
 function clearTranscript() {
   committed = [];
+  local.partial = '';
   segNodes = [];
   transcriptEl.querySelectorAll('.seg').forEach(n => n.remove());
   emptyEl.style.display = '';
@@ -658,6 +710,7 @@ function setRecordingUI(on) {
 }
 
 async function startRecording() {
+  if (getModel() === 'zipformer') return startLocal();
   const apiKey = getCookie(KEY_COOKIE).trim();
   if (!apiKey) {
     openSheet();
@@ -729,6 +782,7 @@ async function startRecording() {
 }
 
 function stopRecording() {
+  if (local.active) { stopLocal(); return; }
   if (!client) return;
   clearGuard();
   setStatus('connecting', 'Finishing…');
@@ -741,6 +795,210 @@ recBtn.addEventListener('click', () => {
   if (recording) stopRecording();
   else startRecording();
 });
+
+// ---- On-device engine: ivrit.ai Zipformer2 streaming transducer (int8), running
+// in a worker on onnxruntime-web's WASM backend. Audio is captured with an
+// AudioWorklet at the device rate and resampled to 16 kHz inside the worker. ----
+const local = {
+  worker: null, ready: false, initPromise: null, pending: null, quiet: false,
+  active: false, stream: null, ctx: null, partial: '', lagShown: false, lag: 0,
+};
+
+const WORKLET_SRC = `
+class PcmTap extends AudioWorkletProcessor {
+  constructor() { super(); this.buf = new Float32Array(4096); this.n = 0; }
+  process(inputs) {
+    const chans = inputs[0];
+    if (chans && chans.length) {
+      const len = chans[0].length;
+      for (let i = 0; i < len; i++) {
+        let v = 0;
+        for (let c = 0; c < chans.length; c++) v += chans[c][i];
+        this.buf[this.n++] = v / chans.length;
+        if (this.n === this.buf.length) {
+          this.port.postMessage(this.buf, [this.buf.buffer]);
+          this.buf = new Float32Array(4096);
+          this.n = 0;
+        }
+      }
+    }
+    return true;
+  }
+}
+registerProcessor('pcm-tap', PcmTap);
+`;
+let workletUrl = '';
+
+function localTokens() {
+  return local.partial ? [{ text: local.partial, is_final: true, language: 'he' }] : [];
+}
+
+function pushLocalFinals(finals) {
+  for (const text of finals) {
+    committed.push({ text, is_final: true, language: 'he' }, { text: '<end>' });
+  }
+}
+
+function onLocalMessage(e) {
+  const m = e.data;
+  switch (m.type) {
+    case 'progress': {
+      if (local.quiet || !m.total) break;
+      const pct = Math.floor((m.loaded / m.total) * 100);
+      setStatus('connecting', m.cached ? 'Loading model…' : `Downloading model… ${pct}% of ${Math.round(m.total / 1e6)} MB`);
+      break;
+    }
+    case 'status':
+      if (!local.quiet) setStatus('connecting', m.text);
+      break;
+    case 'ready':
+      local.ready = true;
+      if (local.pending) { local.pending.resolve(true); local.pending = null; }
+      if (local.quiet && !recording) setStatus('', 'Ready · on-device');
+      break;
+    case 'not-cached':
+      if (local.pending) { local.pending.resolve(false); local.pending = null; }
+      break;
+    case 'result': {
+      if (m.finals.length || m.partial !== local.partial) {
+        if (m.finals.length || m.partial) lastTextAt = Date.now();
+        pushLocalFinals(m.finals);
+        local.partial = m.partial;
+        renderTokens([...committed, ...localTokens()]);
+      }
+      local.lag = m.lag;
+      if (local.active) {
+        const behind = m.lag > 3;
+        if (behind || local.lagShown) {
+          setStatus('recording', behind ? `Recording… (catching up, ${Math.round(m.lag)}s behind)` : 'Recording… · on-device');
+          local.lagShown = behind;
+        }
+      }
+      break;
+    }
+    case 'stopped':
+      pushLocalFinals(m.finals);
+      local.partial = '';
+      renderTokens(committed);
+      reportUsage();
+      setRecordingUI(false);
+      if (statusEl.classList.contains('is-connecting')) setStatus('finished', 'Finished');
+      recBtn.disabled = false;
+      break;
+    case 'error':
+      if (local.pending) { local.pending.reject(new Error(m.message)); local.pending = null; break; }
+      console.error('on-device engine error', m);
+      if (local.active || recording) {
+        teardownLocalAudio();
+        local.active = false;
+        clearGuard();
+        reportUsage();
+        setRecordingUI(false);
+        recBtn.disabled = false;
+      }
+      setStatus('error', 'On-device engine error — ' + m.message);
+      break;
+  }
+}
+
+// Resolves true once the model is loaded. With onlyIfCached, resolves false
+// instead of downloading anything.
+function ensureLocal(onlyIfCached) {
+  if (local.ready) return Promise.resolve(true);
+  if (!onlyIfCached) local.quiet = false;
+  if (local.initPromise) {
+    // A cache-only warm-up may be in flight; if it finds nothing, download.
+    return onlyIfCached ? local.initPromise
+      : local.initPromise.then((ok) => ok || ensureLocal(false));
+  }
+  if (!local.worker) {
+    local.worker = new Worker('/zipformer/worker.js', { type: 'module' });
+    local.worker.onmessage = onLocalMessage;
+    local.worker.onerror = (e) => {
+      e.preventDefault();
+      if (local.pending) { local.pending.reject(new Error(e.message || 'worker failed to load')); local.pending = null; }
+      local.worker = null;
+    };
+  }
+  local.quiet = !!onlyIfCached;
+  local.initPromise = new Promise((resolve, reject) => { local.pending = { resolve, reject }; })
+    .finally(() => { local.initPromise = null; });
+  local.worker.postMessage({ type: 'init', onlyIfCached: !!onlyIfCached });
+  return local.initPromise;
+}
+
+function teardownLocalAudio() {
+  if (local.stream) local.stream.getTracks().forEach((t) => t.stop());
+  if (local.ctx) local.ctx.close().catch(() => {});
+  local.stream = null;
+  local.ctx = null;
+}
+
+async function startLocal() {
+  setStatus('connecting', 'Loading model…');
+  recBtn.disabled = true;
+  try {
+    if (!(await ensureLocal(false))) throw new Error('model not loaded');
+  } catch (e) {
+    setStatus('error', 'Could not load the on-device model — ' + (e.message || 'unknown error'));
+    recBtn.disabled = false;
+    return;
+  }
+
+  try {
+    local.stream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: false, autoGainControl: true },
+    });
+  } catch (e) {
+    setStatus('error', friendlyError('get_user_media_failed'));
+    recBtn.disabled = false;
+    return;
+  }
+
+  try {
+    if (!workletUrl) workletUrl = URL.createObjectURL(new Blob([WORKLET_SRC], { type: 'text/javascript' }));
+    const ctx = new AudioContext();
+    local.ctx = ctx;
+    await ctx.audioWorklet.addModule(workletUrl);
+    const src = ctx.createMediaStreamSource(local.stream);
+    const tap = new AudioWorkletNode(ctx, 'pcm-tap');
+    const mute = ctx.createGain();
+    mute.gain.value = 0;
+    src.connect(tap).connect(mute).connect(ctx.destination);
+    local.worker.postMessage({ type: 'start', sampleRate: ctx.sampleRate });
+    tap.port.onmessage = (e) => {
+      if (local.active) local.worker.postMessage({ type: 'audio', data: e.data }, [e.data.buffer]);
+    };
+    if (ctx.state === 'suspended') await ctx.resume();
+  } catch (e) {
+    teardownLocalAudio();
+    setStatus('error', 'Audio capture failed');
+    recBtn.disabled = false;
+    return;
+  }
+
+  local.active = true;
+  local.partial = '';
+  local.lagShown = false;
+  local.lag = 0;
+  setRecordingUI(true);
+  setStatus('recording', 'Recording… · on-device');
+  recBtn.disabled = false;
+  sessionStart = lastTextAt = Date.now();
+  reported = false;
+  clearGuard();
+  guardTimer = setInterval(guardTick, 1000);
+}
+
+function stopLocal() {
+  if (!local.active) return;
+  local.active = false;
+  clearGuard();
+  teardownLocalAudio();
+  setStatus('connecting', 'Finishing…');
+  recBtn.disabled = true;
+  local.worker.postMessage({ type: 'stop' });
+}
 
 // A backgrounded desktop tab keeps the mic streaming and the Soniox socket open,
 // so stop as soon as the page is hidden. (Background timers are throttled, making
@@ -942,6 +1200,10 @@ function renderLogs(entries) {
 }
 
 setStatus('', 'Idle');
+applyModel();
+// Warm the on-device model in the background, but only if it's already cached
+// (never start a large download without the user pressing record).
+if (getModel() === 'zipformer' && 'caches' in window) ensureLocal(true).catch(() => {});
 refreshStats();
 setInterval(refreshStats, 60000);
 </script>
