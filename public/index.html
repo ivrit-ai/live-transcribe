@@ -822,7 +822,16 @@ recBtn.addEventListener('click', () => {
 const local = {
   worker: null, ready: false, initPromise: null, pending: null, quiet: false,
   active: false, stream: null, ctx: null, partial: '', lagShown: false, lag: 0,
+  // WASM threads: 0 = auto, 1 = single. iOS browsers are all WebKit, whose
+  // threaded WASM (shared memory + nested workers) is unreliable; start
+  // single-threaded there. Elsewhere, a failed threaded load retries with 1.
+  threads: isIOS() ? 1 : 0,
 };
+
+function isIOS() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
 
 const WORKLET_SRC = `
 class PcmTap extends AudioWorkletProcessor {
@@ -936,15 +945,37 @@ function ensureLocal(onlyIfCached) {
     local.worker.onmessage = onLocalMessage;
     local.worker.onerror = (e) => {
       e.preventDefault();
-      if (local.pending) { local.pending.reject(new Error(e.message || 'worker failed to load')); local.pending = null; }
+      const where = e.filename ? ` (${e.filename}:${e.lineno})` : '';
+      if (local.pending) { local.pending.reject(new Error((e.message || 'worker failed to load') + where)); local.pending = null; }
       local.worker = null;
     };
   }
   local.quiet = !!onlyIfCached;
   local.initPromise = new Promise((resolve, reject) => { local.pending = { resolve, reject }; })
     .finally(() => { local.initPromise = null; });
-  local.worker.postMessage({ type: 'init', onlyIfCached: !!onlyIfCached });
+  local.worker.postMessage({ type: 'init', onlyIfCached: !!onlyIfCached, threads: local.threads });
   return local.initPromise;
+}
+
+function resetLocalWorker() {
+  if (local.worker) local.worker.terminate();
+  local.worker = null;
+  local.ready = false;
+  local.initPromise = null;
+  local.pending = null;
+}
+
+// Load the model; if a multi-threaded load fails, retry once single-threaded.
+async function loadLocalModel() {
+  try {
+    return await ensureLocal(false);
+  } catch (e) {
+    if (local.threads === 1) throw e;
+    console.warn('on-device model failed to load with threads; retrying single-threaded', e);
+    resetLocalWorker();
+    local.threads = 1;
+    return ensureLocal(false);
+  }
 }
 
 function teardownLocalAudio() {
@@ -958,7 +989,7 @@ async function startLocal() {
   setStatus('connecting', 'Loading model…');
   recBtn.disabled = true;
   try {
-    if (!(await ensureLocal(false))) throw new Error('model not loaded');
+    if (!(await loadLocalModel())) throw new Error('model not loaded');
   } catch (e) {
     setStatus('error', 'Could not load the on-device model — ' + (e.message || 'unknown error'));
     recBtn.disabled = false;
