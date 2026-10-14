@@ -116,8 +116,7 @@
   footer {
     border-top: 1px solid var(--line);
     background: var(--panel);
-    padding: 14px 18px;
-    padding-bottom: max(14px, env(safe-area-inset-bottom));
+    padding: 14px 18px 10px;
     display: flex;
     align-items: center;
     gap: 14px;
@@ -138,6 +137,18 @@
   .status.is-finished .led { background: var(--accent); }
   .status .txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   @keyframes blink { 50% { opacity: .3; } }
+
+  .credits {
+    display: flex; justify-content: center; flex-wrap: wrap; gap: 4px 8px;
+    background: var(--panel); color: var(--ink-faint);
+    font-size: 12px; line-height: 1.5; text-align: center;
+    padding: 0 18px 8px; padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+  .credits a, .hint a, .empty a { color: var(--ink-soft); }
+  .credits > span { white-space: nowrap; }
+  .credits .sep { opacity: .6; }
+  @media (max-width: 599px) { .credits .sep { display: none; } .credits { flex-direction: column; align-items: center; gap: 0; } }
+  .page .credits { background: none; padding-top: 8px; }
 
   .ghost-btn {
     appearance: none; background: none; border: none; color: var(--ink-faint);
@@ -181,6 +192,7 @@
     z-index: 21;
   }
   .sheet.open { transform: translate(-50%, 0); }
+  .sheet:not(.open) { box-shadow: none; } /* don't let the parked sheet's shadow peek over the footer */
   @media (min-width: 600px) {
     .sheet { bottom: auto; top: 50%; transform: translate(-50%, calc(-50% + 20px)); border-radius: 20px; opacity: 0; }
     .sheet.open { transform: translate(-50%, -50%); opacity: 1; }
@@ -342,6 +354,11 @@
       <span class="ic"></span>
     </button>
   </footer>
+  <div class="credits">
+    <span id="modelCredit">Hebrew model <a href="https://huggingface.co/thewh1teagle/zipformer2-66m-streaming-he" target="_blank" rel="noopener">zipformer2-66m-streaming-he</a> by Yakov Kolani</span>
+    <span class="sep" id="creditSep">·</span>
+    <span>Hosted on <a href="https://xhostd.com" target="_blank" rel="noopener">xhostd</a></span>
+  </div>
 
   <div class="overlay" id="overlay"></div>
   <aside class="sheet" id="sheet" role="dialog" aria-modal="true" aria-label="Settings">
@@ -351,8 +368,8 @@
     <div class="field">
       <label for="modelSel">Model</label>
       <select id="modelSel">
-        <option value="zipformer">ivrit.ai Zipformer — on-device, Hebrew</option>
-        <option value="soniox">Soniox stt-rt-v5 — cloud, multilingual</option>
+        <option value="zipformer">Zipformer2 by Yakov Kolani</option>
+        <option value="soniox">Soniox stt-rt-v5 (cloud)</option>
       </select>
       <div class="hint" id="modelHint"></div>
     </div>
@@ -416,6 +433,7 @@
       </button>
     </div>
     <div class="page-body" id="logsBody"></div>
+    <div class="credits"><span>Hosted on <a href="https://xhostd.com" target="_blank" rel="noopener">xhostd</a></span></div>
   </section>
 
 <script type="module">
@@ -462,22 +480,24 @@ const modelSel = el('modelSel');
 const MODEL_TEXT = {
   zipformer: {
     sub: 'Runs entirely in your browser — your audio never leaves this device. The model downloads once (about 72 MB) and is cached. Anonymous usage (a random id and seconds transcribed) is recorded for usage statistics — never your audio or text.',
-    hint: 'Hebrew. Runs on this device\'s CPU; no API key needed.',
-    empty: 'Tap the record button below to start live transcription. Speech is transcribed on this device; the first run downloads the model.',
+    hint: 'Hebrew streaming model <a href="https://huggingface.co/thewh1teagle/zipformer2-66m-streaming-he" target="_blank" rel="noopener">zipformer2-66m-streaming-he</a>, developed by Yakov Kolani. Runs on this device\'s CPU; no API key needed.',
+    empty: 'Tap the record button below to start live transcription. Speech is transcribed on this device by Yakov Kolani\'s <a href="https://huggingface.co/thewh1teagle/zipformer2-66m-streaming-he" target="_blank" rel="noopener">zipformer2 Hebrew model</a>; the first run downloads it.',
   },
   soniox: {
     sub: 'Your key is stored only in this browser (as a cookie) and sent directly to Soniox. Anonymous usage (a random id and seconds transcribed) is recorded for usage statistics — never your audio, text, or key.',
-    hint: 'Requires a Soniox API key.',
+    hint: 'Cloud, multilingual. Requires a Soniox API key.',
     empty: 'Tap the record button below to start live transcription. Add your Soniox API key in settings first.',
   },
 };
 function showModelFields(model) {
   el('sonioxFields').style.display = model === 'soniox' ? '' : 'none';
   el('settingsSub').textContent = MODEL_TEXT[model].sub;
-  el('modelHint').textContent = MODEL_TEXT[model].hint;
+  el('modelHint').innerHTML = MODEL_TEXT[model].hint; // static strings from MODEL_TEXT
 }
 function applyModel() {
-  el('emptyText').textContent = MODEL_TEXT[getModel()].empty;
+  const model = getModel();
+  el('emptyText').innerHTML = MODEL_TEXT[model].empty; // static strings from MODEL_TEXT
+  el('modelCredit').style.display = el('creditSep').style.display = model === 'zipformer' ? '' : 'none';
 }
 modelSel.addEventListener('change', () => showModelFields(modelSel.value));
 
@@ -796,7 +816,7 @@ recBtn.addEventListener('click', () => {
   else startRecording();
 });
 
-// ---- On-device engine: ivrit.ai Zipformer2 streaming transducer (int8), running
+// ---- On-device engine: Yakov Kolani's zipformer2-66m-streaming-he (int8), running
 // in a worker on onnxruntime-web's WASM backend. Audio is captured with an
 // AudioWorklet at the device rate and resampled to 16 kHz inside the worker. ----
 const local = {

@@ -1,4 +1,6 @@
-// On-device Hebrew streaming ASR worker (ivrit-ai/zipformer2-66m-streaming-he).
+// On-device Hebrew streaming ASR worker. Model: zipformer2-66m-streaming-he by
+// Yakov Kolani (https://huggingface.co/thewh1teagle/zipformer2-66m-streaming-he),
+// loaded from the ivrit-ai/zipformer2-66m-streaming-he mirror.
 // Runs the int8 sherpa-onnx export on onnxruntime-web's WASM backend
 // (multi-threaded when the page is cross-origin isolated). In testing this was
 // as fast as WebGPU fp16 on integrated GPUs at half the download. Model files

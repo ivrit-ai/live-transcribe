@@ -1,4 +1,6 @@
 // Streaming Zipformer2 transducer for the browser, on top of onnxruntime-web.
+// The model, zipformer2-66m-streaming-he, was developed by Yakov Kolani:
+// https://huggingface.co/thewh1teagle/zipformer2-66m-streaming-he
 // Mirrors sherpa-onnx's online pipeline: Kaldi-compatible fbank, chunked encoder
 // with cached states, greedy transducer search, and its default endpoint rules.
 // No DOM access; runs inside a worker. `ort` is injected by the caller.
