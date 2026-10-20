@@ -192,7 +192,7 @@
     z-index: 21;
   }
   .sheet.open { transform: translate(-50%, 0); }
-  .sheet:not(.open) { box-shadow: none; } /* don't let the parked sheet's shadow peek over the footer */
+  .sheet:not(.open) { box-shadow: none; pointer-events: none; } /* hidden sheets must not intercept clicks */
   @media (min-width: 600px) {
     .sheet { bottom: auto; top: 50%; transform: translate(-50%, calc(-50% + 20px)); border-radius: 20px; opacity: 0; }
     .sheet.open { transform: translate(-50%, -50%); opacity: 1; }
