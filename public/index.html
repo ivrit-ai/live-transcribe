@@ -192,7 +192,7 @@
     z-index: 21;
   }
   .sheet.open { transform: translate(-50%, 0); }
-  .sheet:not(.open) { box-shadow: none; } /* don't let the parked sheet's shadow peek over the footer */
+  .sheet:not(.open) { box-shadow: none; pointer-events: none; } /* hidden sheets must not intercept clicks */
   @media (min-width: 600px) {
     .sheet { bottom: auto; top: 50%; transform: translate(-50%, calc(-50% + 20px)); border-radius: 20px; opacity: 0; }
     .sheet.open { transform: translate(-50%, -50%); opacity: 1; }
@@ -358,6 +358,10 @@
     <span id="modelCredit">Hebrew model <a href="https://huggingface.co/thewh1teagle/zipformer2-66m-streaming-he" target="_blank" rel="noopener">zipformer2-66m-streaming-he</a> by Yakov Kolani</span>
     <span class="sep" id="creditSep">·</span>
     <span>Hosted on <a href="https://xhostd.com" target="_blank" rel="noopener">xhostd</a></span>
+    <span class="sep">·</span>
+    <span>Provided by <a href="https://ivrit.ai/" target="_blank" rel="noopener">ivrit.ai</a></span>
+    <span class="sep">·</span>
+    <span>Questions? <a href="mailto:info@ivrit.ai">info@ivrit.ai</a></span>
   </div>
 
   <div class="overlay" id="overlay"></div>
